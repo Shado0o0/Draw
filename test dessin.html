@@ -1,0 +1,667 @@
+<!doctype html>
+<!--
+
+Site de dessin, le programme contient l'HTML, le CSS et le JS ensemble.
+
+-->
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mon tableau de dessin 🎨</title>
+<style>
+  :root{
+    --panel-width: 240px;
+    --bg: #1e3550;
+    --panel-bg: #0a1d44;
+    --muted: #b4c1d3;
+    --accent: #5d00ff;
+    --card: #1a1c20;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#071025 0%, #071829 100%);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+  .app{display:flex;height:100vh;overflow:hidden}
+  /* Palette / barre coté */
+  .palette{
+    position:fixed;
+    left:0;
+    top:12px;
+    bottom:12px;
+    width:var(--panel-width);
+    background: linear-gradient(180deg,var(--panel-bg), #071022);
+    border-radius:12px;
+    padding:12px;
+    box-shadow: 0 6px 30px rgba(2,6,23,0.7);
+    z-index:50;
+    color:#e6eef8;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    user-select:none;
+  }
+  .drag-handle{
+    height:28px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:4px;
+    cursor:grab;
+  }
+  .title{font-weight:600;font-size:15px}
+  .controls{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+  .big-color{
+    height:48px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);
+    display:flex;align-items:center;justify-content:space-between;padding:8px 10px;
+    font-weight:600;
+  }
+  .color-input{display:flex;gap:8px;align-items:center}
+  input[type="color"]{width:46px;height:36px;border:0;padding:0;background:transparent;cursor:pointer}
+  .hex-input{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03);padding:6px 8px;border-radius:6px;color:#e6eef8;width:120px}
+  .swatches{display:flex;flex-wrap:wrap;gap:8px;padding-top:6px}
+  .swatch{width:32px;height:32px;border-radius:6px;border:1px solid rgba(0,0,0,0.35);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.35)}
+  .recent{display:flex;gap:6px;flex-wrap:wrap;padding-top:6px}
+  .btn{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px 8px;border-radius:8px;color:var(--muted);cursor:pointer}
+  .btn-primary{background:linear-gradient(90deg,var(--accent),#5b21b6);border:0;color:white}
+  .size-slider{width:100%}
+  .footer{margin-top:auto;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+  /* Canvas area */
+  .canvas-wrap{flex:1;margin-left:calc(var(--panel-width) + 26px);display:flex;flex-direction:column;padding:18px}
+
+  canvas{
+    border-radius:10px;
+    background:#fff;
+    box-shadow:0 8px 30px rgba(2,6,23,0.4);
+    flex:1;touch-action:none;
+   cursor: url('../img/crayon.png') 2 14 , crosshair; 
+}
+  /* Pallette ptit screen */
+  @media (max-width:700px){
+    :root{--panel-width:200px}
+    .palette{left:8px;top:8px;bottom:auto;height:auto;max-height:70vh;overflow:auto}
+    .canvas-wrap{margin-left:calc(var(--panel-width) + 16px)}
+  }
+  .tooltip{font-size:12px;color:var(--muted)}
+  .inline{display:inline-flex;gap:6px;align-items:center}
+  .kbd{background:rgba(255,255,255,0.03);padding:3px 6px;border-radius:6px;font-weight:600;font-size:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="palette" id="palette" role="region" aria-label="Palette de couleurs">
+    <div class="drag-handle" id="dragHandle" title="Déplacer la palette">
+      <div style="display:flex;flex-direction:column">
+        <div class="title">Palette</div>
+        <div class="tooltip">Glisse pour déplacer</div>
+      </div>
+      
+      <div style="margin-left:auto;display:flex;gap:6px">
+        <button class="btn" id="clearBtn" title="Effacer le canevas">Effacer</button>
+        <button class="btn" id="downloadBtn" title="Télécharger l'image">Download</button>
+      </div>
+       
+    </div>
+
+    <div class="big-color" aria-hidden="false">
+      <div class="color-input">
+        <input type="color" id="colorPicker" value="#1f9bff" aria-label="Sélecteur de couleur">
+        <div id="currentHex" style="min-width:76px">#1f9bff</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="text" id="hexField" class="hex-input" maxlength="7" aria-label="Code hexadécimal"> 
+        <button class="btn" id="copyHexBtn" title="Copier hex">Copier</button>
+      </div> 
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center">
+      <label for="size" style="font-size:13px;color:var(--muted)">Taille</label>
+      <input id="size" type="range" min="1" max="80" value="6" class="size-slider" aria-label="Taille du pinceau">
+      <div class="kbd" id="sizeValue">6</div>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-primary" id="addSwatch">Ajouter au nuancier</button>
+      <button class="btn" id="eyeDropper">Pipette</button>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px">
+        <button class= "btn" id="eraser">Gomme</button>
+        <button  class= "btn" id="fill">Remplir</button>
+      </div>
+
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-weight:600">Nuancier</div>
+        <div class="tooltip">Clique pour sélectionner</div>
+      </div>
+      <div class="swatches" id="swatches" aria-label="Nuancier">
+        <!-- dynamiques -->
+      </div>
+    </div>
+
+    <div>
+      <div style="font-weight:600">Couleurs récentes</div>
+      <div class="recent" id="recentColors" aria-live="polite">
+        <!-- récentes -->
+      </div>
+    </div>
+
+    <div class="footer">
+      <div style="display:flex;flex-direction:column">
+        <div style="font-weight:600">Raccourcis</div>
+        <div style="font-size:12px;color:var(--muted)">P : Focus palette · C : Pipette · E : Effacer · D : Telecharger · R : Effacer les couleurs récentes</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="canvas-wrap">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+      <div style="color:#cbd5e1">Canva de dessin</div>
+      <div style="font-size:13px;color:var(--muted)">Dessine avec la souris ou le doigt</div>
+    </div>
+    <canvas id="drawCanvas" width="1200" height="720" aria-label="Canevas de dessin"></canvas>
+  </main>
+</div>
+
+<script>
+let originalTitle = document.title;
+
+window.onblur = () => { document.title = " Reviens dessiner !"; };
+window.onfocus = () => { document.title = originalTitle || "Mon tableau de dessin 🎨"; };
+document.addEventListener('DOMContentLoaded', function () {
+
+/* ---------------------------
+   Utilitaires couleurs simples
+   --------------------------- */
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function toHex(c){
+  // input: "rgba(...)"
+  if(!c) return '#000000';
+  if(c[0]==='#' && c.length>=7) return c.slice(0,7).toLowerCase();
+  // try rgb/rgba string like "rgb(r,g,b)" or "rgba(r,g,b,a)"
+  const m = c.match(/rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i);
+  if(m) {
+    return '#' + [1,2,3].map(i=>Number(m[i]).toString(16).padStart(2,'0')).join('');
+  }
+  return c;
+}
+
+/* ---------------------------
+   Éléments DOM
+   --------------------------- */
+const colorPicker = document.getElementById('colorPicker');
+const currentHex = document.getElementById('currentHex');
+const hexField = document.getElementById('hexField');
+const copyHexBtn = document.getElementById('copyHexBtn');
+const sizeSlider = document.getElementById('size');
+const sizeValue = document.getElementById('sizeValue');
+const addSwatchBtn = document.getElementById('addSwatch');
+const swatchesWrap = document.getElementById('swatches');
+const recentWrap = document.getElementById('recentColors');
+const eyeDropperBtn = document.getElementById('eyeDropper');
+const clearBtn = document.getElementById('clearBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+
+const canvas = document.getElementById('drawCanvas');
+const ctx = canvas.getContext('2d');
+
+let erasing = false, filling = false;
+
+/* ---------------------------
+   Initialisation
+   --------------------------- */
+let state = {
+  color: colorPicker.value || '#1f9bff',
+  size: Number(sizeSlider.value) || 6,
+  drawing: false,
+  last: null,
+  recent: JSON.parse(localStorage.getItem('recentColors')||'[]'),
+  swatches: JSON.parse(localStorage.getItem('mySwatches')||'["#000000","#ffffff","#ff4d6d","#ffd166","#06d6a0","#1f9bff"]')
+};
+
+function saveState(){
+  localStorage.setItem('recentColors', JSON.stringify(state.recent.slice(0,12)));
+  localStorage.setItem('mySwatches', JSON.stringify(state.swatches));
+}
+
+/* ---------------------------
+   Rendu nuancier + récents
+   --------------------------- */
+function renderSwatches(){
+  swatchesWrap.innerHTML='';
+  state.swatches.forEach(c=>{
+    const d = document.createElement('button');
+    d.className='swatch';
+    d.style.background = c;
+    d.title = c;
+    d.setAttribute('aria-label','Couleur '+c);
+    d.addEventListener('click', ()=> selectColor(c));
+    swatchesWrap.appendChild(d);
+  })
+}
+function renderRecent(){
+  recentWrap.innerHTML='';
+  state.recent.forEach(c=>{
+    const d = document.createElement('button');
+    d.className='swatch';
+    d.style.background = c;
+    d.title = c;
+    d.addEventListener('click', ()=> selectColor(c));
+    recentWrap.appendChild(d);
+  })
+}
+renderSwatches();
+renderRecent();
+
+/* ---------------------------
+   Sélection / mise à jour couleur
+   --------------------------- */
+function setColor(hex){
+  hex = toHex(hex);
+  state.color = hex;
+  colorPicker.value = hex;
+  currentHex.textContent = hex;
+  hexField.value = hex;
+  // push to recent (unique)
+  state.recent = [hex, ...state.recent.filter(x=>x!==hex)].slice(0,12);
+  renderRecent(); saveState();
+}
+function selectColor(c){ setColor(c); }
+
+colorPicker.addEventListener('input', e => setColor(e.target.value));
+hexField.addEventListener('change', e => {
+  let v = e.target.value.trim();
+  if(!v.startsWith('#')) v = '#'+v;
+  // basic validation
+  if(/^#([0-9a-fA-F]{6})$/.test(v)){
+    setColor(v);
+  } else {
+    // revert to previous valid
+    e.target.value = state.color;
+  }
+});
+copyHexBtn.addEventListener('click', async ()=>{
+  try{
+    await navigator.clipboard.writeText(state.color);
+    copyHexBtn.textContent = 'OK';
+    setTimeout(()=>copyHexBtn.textContent='Copier',800);
+  }catch(e){
+    alert('Impossible de copier (permissions).')
+  }
+});
+
+/* ---------------------------
+   Taille pinceau
+   --------------------------- */
+sizeSlider.addEventListener('input', e=>{
+  state.size = Number(e.target.value);
+  sizeValue.textContent = state.size;
+});
+
+/* ---------------------------
+   Ajouter au nuancier
+   --------------------------- */
+addSwatchBtn.addEventListener('click', ()=>{
+  if(!state.swatches.includes(state.color)){
+    state.swatches.unshift(state.color);
+    state.swatches = state.swatches.slice(0,24);
+    saveState();
+    renderSwatches();
+  }
+});
+
+/* ---------------------------
+   EyeDropper API (si dispo) => Pipette
+   --------------------------- */
+eyeDropperBtn.addEventListener('click', async ()=>{
+  if (window.EyeDropper) {
+    try{
+      const eye = new EyeDropper();
+      const picked = await eye.open(); // { sRGBHex: "#rrggbb" }
+      if(picked && picked.sRGBHex) setColor(picked.sRGBHex);
+    }catch(err){
+      console.warn('Pipette annulée', err);
+    }
+  } else {
+    alert('Pipette non supportée par votre navigateur. Utilisez la capture d\'écran ou copiez le hex.');
+  }
+});
+function fill(){
+    filling = true;
+
+}
+/* ---------------------------
+   Canvas drawing (mouse + touch)
+   --------------------------- */
+function resizeCanvasToFit(){
+  // fill available area and preserve existing drawing when possible
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const newW = Math.max(1, Math.floor(rect.width * dpr));
+  const newH = Math.max(1, Math.floor(rect.height * dpr));
+
+  // if already the correct internal size, ensure transform is correct and return
+  if (canvas.width === newW && canvas.height === newH) {
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.scale(dpr, dpr);
+    return;
+  }
+
+  // preserve current drawing by exporting it, then resize and redraw
+  const data = canvas.toDataURL();
+  canvas.width = newW;
+  canvas.height = newH;
+
+  // reset any transforms before applying DPR scale
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.scale(dpr, dpr);
+
+  // ensure a white background exists
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0, canvas.width/dpr, canvas.height/dpr);
+
+  const img = new Image();
+  img.onload = () => {
+    try {
+      ctx.drawImage(img, 0, 0, canvas.width/dpr, canvas.height/dpr);
+    } catch (e) {
+      // drawing may fail in some edge cases; fallback silently
+      console.warn('Failed to restore canvas image:', e);
+    }
+  };
+  img.src = data;
+}
+function getXY(e){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  let x, y;
+  if(e.touches && e.touches[0]) {
+    x = (e.touches[0].clientX - rect.left) * (canvas.width / rect.width);
+    y = (e.touches[0].clientY - rect.top) * (canvas.height / rect.height);
+  } else {
+    x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    y = (e.clientY - rect.top) * (canvas.height / rect.height);
+  }
+  return {x, y};
+}
+function startDraw(e){
+  e.preventDefault();
+  state.drawing = true;
+  const p = getXY(e);
+  state.last = p;
+  drawPoint(p.x, p.y, state.size, state.color);
+}
+function endDraw(e){
+  state.drawing = false;
+  state.last = null;
+}
+function draw(e){
+  if(!state.drawing) return;
+  const p = getXY(e);
+  drawLine(state.last.x, state.last.y, p.x, p.y, state.size, state.color);
+  state.last = p;
+}
+
+function drawPoint(x,y,size,color){
+  // support erasing via composite operation
+  ctx.beginPath();
+  if (erasing) {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,1)';
+  } else {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = color;
+  }
+  ctx.arc(x, y, size/2, 0, Math.PI*2);
+  ctx.fill();
+  // leave compositeOperation as-is; callers will reset if needed
+}
+
+function drawLine(x1,y1,x2,y2,size,color){
+  ctx.beginPath();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = size;
+  if (erasing) {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.strokeStyle = 'rgba(0,0,0,1)';
+  } else {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = color;
+  }
+  ctx.moveTo(x1,y1);
+  ctx.lineTo(x2,y2);
+  ctx.stroke();
+}
+
+canvas.addEventListener('mousedown', startDraw);
+canvas.addEventListener('mousemove', draw);
+canvas.addEventListener('mouseup', endDraw);
+canvas.addEventListener('mouseleave', endDraw);
+canvas.addEventListener('touchstart', startDraw, {passive:false});
+canvas.addEventListener('touchmove', draw, {passive:false});
+canvas.addEventListener('touchend', endDraw, {passive:false});
+
+/* ---------------------------
+   Clear & Download
+   --------------------------- */
+if (clearBtn) {
+  clearBtn.addEventListener('click', ()=>{
+    // guard against missing context
+    if (!ctx || !canvas) return;
+    const ok = confirm('Effacer le canevas ?');
+    if(!ok) return;
+
+    // Use the canvas internal pixel size (account for DPR) to clear/fill correctly
+    const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+    // reset any transforms so we operate in CSS coordinates scaled by DPR
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.scale(dpr, dpr);
+
+    // clear and fill using CSS-sized coordinates (canvas.width/dpr === CSS width)
+    ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+    ctx.restore();
+  });
+}
+
+
+if (downloadBtn) {
+  downloadBtn.addEventListener('click', ()=>{
+    
+    if (!canvas) return;
+    const ok = confirm('Voulez-vous telecharger votre dessin ?');
+    if(!ok) return;
+
+    // Ensure we export the actual pixel content; no transform changes are needed here
+    const link = document.createElement('a');
+    link.download = 'MonDessin.png';
+    try {
+      link.href = canvas.toDataURL();
+      link.click();
+    } catch (e) {
+      // fail gracefully if toDataURL is not available / blocked
+      alert('Impossible de générer l\'image : ' + (e && e.message || e));
+    }
+  });
+} 
+if (downloadBtn && canvas) {
+      downloadBtn.addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.download = 'mon_dessin.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+
+/* ---------------------------
+   Pointer / keyboard shortcuts
+   --------------------------- */
+document.addEventListener('keydown', (e)=>{
+  if(e.key.toLowerCase()==='p'){ // focus palette
+    colorPicker.focus(); e.preventDefault();
+  }
+  if(e.key.toLowerCase()==='c'){ // pipette
+    eyeDropperBtn.click();
+  }
+  if(e.key.toLowerCase()==='e'){ // clear
+    clearBtn.click();
+  }
+  if(e.key.toLowerCase()==='d'){ // Download
+    downloadBtn.click();
+  }
+  if(e.key.toLowerCase()==='r'){ // clear recent colors
+    state.recent = [];
+    renderRecent(); saveState();
+  }
+  /*if(.key.toLowerCase()==='g'){ // eraser
+    eraserBtn.click();
+  }
+  if(.key.toLowerCase()==='s'){ // sceau
+    FillBtn.click();
+  }*/
+});
+
+/* ---------------------------
+   Save recent color whenever we draw with new color
+   --------------------------- */
+canvas.addEventListener('mouseup', ()=>{
+  // when user stops drawing, add color to recent
+  if(state.color){
+    state.recent = [state.color, ...state.recent.filter(x=>x!==state.color)].slice(0,12);
+    renderRecent(); saveState();
+  }
+});
+/* ---------------------------
+   Drag palette by handle
+   --------------------------- */
+const palette = document.getElementById('palette');
+const handle = document.getElementById('dragHandle');
+let dragging=false, offset={x:0,y:0};
+handle.addEventListener('pointerdown', (e)=>{
+  dragging=true;
+  try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+  const rect = palette.getBoundingClientRect();
+  offset.x = e.clientX - rect.left;
+  offset.y = e.clientY - rect.top;
+  handle.style.cursor='grabbing';
+});
+
+document.addEventListener('pointermove', (e)=>{
+  if(!dragging) return;
+  let left = e.clientX - offset.x;
+  let top = e.clientY - offset.y;
+  // clamp to viewport
+  left = Math.max(8, Math.min(left, window.innerWidth - palette.offsetWidth - 8));
+  top = Math.max(8, Math.min(top, window.innerHeight - palette.offsetHeight - 8));
+  palette.style.left = left + 'px';
+  palette.style.top = top + 'px';
+});
+
+document.addEventListener('pointerup', (e)=>{
+  if(!dragging) return;
+  dragging = false;
+  try { handle.releasePointerCapture && handle.releasePointerCapture(e.pointerId); } catch(_) {}
+  handle.style.cursor = 'grab';
+});
+document.addEventListener('pointercancel', ()=>{
+  dragging = false;
+  handle.style.cursor = 'grab';
+});
+/* ---------------------------
+    Cursor
+   --------------------------- 
+// update canvas cursor based on current tool state
+function updateCursor(){
+  if(erasing){
+    canvas.style.cursor = "url('../img/gomme.png') 8 16, crosshair";
+  } else if (filling) {
+    canvas.style.cursor = "url('../img/seau.png') 8 16, crosshair";
+  } else {
+    canvas.style.cursor = "url('../img/crayon.png') 2 14, crosshair";
+  }
+}*/
+//updateCursor();
+
+eraserBtn.addEventListener('click', () => {
+  // toggle eraser mode; ensure fill mode is off
+  erasing = !erasing;
+  filling = false;
+  eraserBtn.style.background = erasing ? '#666' : '';
+  fillBtn.style.background = '';
+
+  // reset composite operation when turning eraser off
+  if (!erasing) {
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // update visible cursor
+  fillBtn.addEventListener('click', () => {
+  const ok = confirm('Remplir tout le canevas avec la couleur sélectionnée ?');
+  if (!ok) return;
+
+  erasing = false;
+  filling = true; // enable fill mode while performing the action
+  eraserBtn.style.background = '';
+  fillBtn.style.background = '#666';
+
+  // update cursor for fill mode
+  //updateCursor();
+
+  // fill using canvas internal resolution (account for DPR)
+  const dpr = window.devicePixelRatio || 1;
+  ctx.save();
+  // reset transforms and draw in CSS-coordinates scaled by DPR
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.scale(dpr, dpr);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = state.color || '#ffffff';
+  ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+  ctx.restore();
+
+  // record color as recent and update UI
+  state.recent = [state.color, ...state.recent.filter(x => x !== state.color)].slice(0, 12);
+  renderRecent(); saveState();
+
+  // visually reset fill button and mode after a short moment
+  setTimeout(()=>{ fillBtn.style.background = ''; filling = false; //updateCursor(); 
+  }, 300);
+});
+
+  // record color as recent and update UI
+  state.recent = [state.color, ...state.recent.filter(x => x !== state.color)].slice(0, 12);
+  renderRecent(); saveState();
+
+  // visually reset fill button after a short moment
+  setTimeout(()=>{ fillBtn.style.background = ''; }, 300);
+});
+document.getElementById('fill').style.background = filling ? '#666' : '';
+/* ---------------------------
+   Start
+   --------------------------- */
+setColor(state.color);
+sizeValue.textContent = state.size;
+renderSwatches();
+renderRecent();
+
+// better resolution of the palette
+function styleCanvasToContainer(){
+  const wrap = canvas.parentElement;
+  const rect = wrap.getBoundingClientRect();
+  canvas.style.width = (rect.width - 0) + 'px';
+  canvas.style.height = (rect.height - 18) + 'px';
+  resizeCanvasToFit();
+
+}
+
+
+styleCanvasToContainer();
+window.addEventListener('load', styleCanvasToContainer);
+window.addEventListener('resize', styleCanvasToContainer);
+
+}); // end DOMContentLoaded
+</script>
+</body>
+</html>
